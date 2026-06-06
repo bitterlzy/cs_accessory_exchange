@@ -114,7 +114,18 @@ ITEM_DEFINITIONS = [
 
 
 def seed():
-    """填充装备数据字典"""
+    """
+    填充装备数据字典到 item_definitions 表
+    
+    流程:
+    1. 确保所有表已创建
+    2. 遍历 ITEM_DEFINITIONS 列表
+    3. 通过 market_hash_name 判重，不存在则插入
+    4. 提交事务
+    5. 打印统计信息
+    
+    幂等性: 多次运行安全，不会产生重复数据
+    """
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
@@ -143,5 +154,5 @@ def seed():
 
 
 if __name__ == "__main__":
-    print("🌱 正在填充装备数据字典...")
+    print("[*] 正在填充装备数据字典...")
     seed()

@@ -22,7 +22,18 @@ def list_listings(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    """浏览所有活跃的交换请求"""
+    """
+    浏览所有活跃的交换请求
+    
+    参数:
+    - category: 按期望品类筛选
+    - quality: 按期望品质筛选
+    - search: 按饰品名称搜索
+    - page/limit: 分页
+    
+    只返回 status=active 的请求，已关闭的请求不展示。
+    预加载 seller 和 offered_item.definition 避免 N+1。
+    """
     query = db.query(Listing).options(
         joinedload(Listing.seller),
         joinedload(Listing.offered_item).joinedload(InventoryItem.definition),
@@ -55,7 +66,12 @@ def my_listings(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """我发布的交换请求"""
+    """
+    获取当前用户发布的所有交换请求
+    
+    返回所有状态的请求（active/closed/cancelled），
+    方便用户管理自己的发布记录。
+    """
     listings = db.query(Listing).options(
         joinedload(Listing.seller),
         joinedload(Listing.offered_item).joinedload(InventoryItem.definition),
@@ -70,7 +86,20 @@ def create_listing(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """发布交换请求"""
+    """
+    发布新的交换请求
+    
+    流程:
+    1. 验证物品属于当前用户且状态为 available
+    2. 锁定物品 (status -> locked)
+    3. 创建 Listing 记录
+    4. 写入 listing_tracking 统计表
+    5. 返回完整的请求信息（含卖家、物品详情）
+    
+    约束:
+    - 不能上架别人的物品
+    - 已锁定的物品不能重复上架
+    """
     item = db.query(InventoryItem).filter(InventoryItem.id == req.offered_item_id).first()
     if not item:
         raise NotFound("饰品不存在")
@@ -102,7 +131,13 @@ def create_listing(
     )
     db.add(tracking)
     db.flush()
-    db.refresh(listing, ["seller", "offered_item"])
+    db.refresh(listing)
+
+    # 重新查询以加载关联关系
+    listing = db.query(Listing).options(
+        joinedload(Listing.seller),
+        joinedload(Listing.offered_item).joinedload(InventoryItem.definition),
+    ).filter(Listing.id == listing.id).first()
 
     return ListingOut.from_orm(listing)
 
@@ -113,7 +148,16 @@ def close_listing(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """关闭交换请求"""
+    """
+    关闭自己发布的交换请求
+    
+    操作:
+    - 请求状态设为 cancelled
+    - tracking 状态设为 inactive
+    - 物品解锁回 available
+    
+    关闭后该请求不再出现在公开列表中。
+    """
     listing = db.query(Listing).filter(Listing.id == listing_id).first()
     if not listing:
         raise NotFound("交换请求不存在")

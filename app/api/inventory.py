@@ -18,7 +18,16 @@ def list_inventory(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """获取我的库存列表"""
+    """
+    获取当前用户的库存列表
+    
+    筛选条件:
+    - status: 按库存状态筛选 (available/locked/traded/removed)
+    - category: 按饰品品类筛选 (weapon/knife/gloves/sticker/agent)
+    - search: 按饰品名称关键词搜索
+    
+    性能: 使用 joinedload 预加载 definition 关联，避免 N+1 查询
+    """
     query = db.query(InventoryItem).options(joinedload(InventoryItem.definition))
     query = query.filter(InventoryItem.owner_id == user_id)
 
@@ -39,7 +48,16 @@ def create_inventory_item(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """添加饰品到库存"""
+    """
+    添加饰品到当前用户的库存
+    
+    校验:
+    - definition_id 必须存在于 item_definitions 数据字典
+    
+    创建后:
+    - 状态默认为 available
+    - 需重新查询以加载 definition 关联关系
+    """
     # 验证装备字典存在
     definition = db.query(ItemDefinition).filter(ItemDefinition.id == req.definition_id).first()
     if not definition:
@@ -58,7 +76,12 @@ def create_inventory_item(
     )
     db.add(item)
     db.flush()
-    db.refresh(item, ["definition"])
+    db.refresh(item)
+
+    # 重新查询以加载关联关系
+    item = db.query(InventoryItem).options(
+        joinedload(InventoryItem.definition)
+    ).filter(InventoryItem.id == item.id).first()
 
     return InventoryItemOut.from_orm(item)
 
@@ -69,7 +92,15 @@ def delete_inventory_item(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """删除（移除）库存饰品"""
+    """
+    移除库存中的饰品
+    
+    约束:
+    - 只能移除 available 状态的饰品（上架中或锁定中不可删除）
+    - 只能删除自己的饰品
+    
+    实际操作为软删除: 将状态改为 removed 而非物理删除
+    """
     item = db.query(InventoryItem).filter(InventoryItem.id == item_id).first()
     if not item:
         raise NotFound("饰品不存在")

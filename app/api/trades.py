@@ -15,7 +15,18 @@ def list_trades(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """我的交换历史"""
+    """
+    获取当前用户的所有完成交换记录
+    
+    过滤条件:
+    - status = OfferStatus.completed（只返回完成的交换）
+    - proposer_id == user_id OR receiver_id == user_id（作为发起方或接收方）
+    
+    预加载:
+    - listing: 关联的交换请求
+    - proposer/receiver: 双方用户信息
+    - offer_items -> inventory_item -> definition: 交换的饰品详情
+    """
     trades = db.query(TradeOffer).options(
         joinedload(TradeOffer.listing),
         joinedload(TradeOffer.proposer),
@@ -35,7 +46,14 @@ def get_trade(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """交换详情"""
+    """
+    获取单条交换记录的详细信息
+    
+    返回交易的完整快照，包括:
+    - 交易双方信息
+    - 所有涉及的物品及磨损值
+    - 关联的 listing 信息
+    """
     trade = db.query(TradeOffer).options(
         joinedload(TradeOffer.listing),
         joinedload(TradeOffer.proposer),

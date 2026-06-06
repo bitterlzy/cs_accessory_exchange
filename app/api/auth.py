@@ -32,7 +32,19 @@ def _create_refresh_token(user_id: int, username: str) -> str:
 
 @router.post("/register", response_model=AuthResponse, status_code=201)
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
-    """用户注册"""
+    """
+    用户注册
+    
+    流程:
+    1. 检查邮箱或用户名是否已存在
+    2. 使用 bcrypt 哈希密码
+    3. 创建用户记录
+    4. 生成 JWT access_token 和 refresh_token
+    5. 返回用户信息和令牌
+
+    异常:
+    - 400: 邮箱或用户名已被注册
+    """
     existing = db.query(User).filter(
         (User.email == req.email) | (User.username == req.username)
     ).first()
@@ -59,7 +71,20 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=AuthResponse)
 def login(req: LoginRequest, db: Session = Depends(get_db)):
-    """用户登录"""
+    """
+    用户登录
+    
+    流程:
+    1. 根据邮箱查找用户
+    2. 检查用户状态（是否禁用）
+    3. 验证密码（bcrypt verify）
+    4. 更新最后登录时间
+    5. 生成 JWT 令牌
+
+    安全策略:
+    - 不论邮箱不存在还是密码错误，统一返回"邮箱或密码错误"
+    - 防止用户枚举攻击
+    """
     user = db.query(User).filter(User.email == req.email).first()
     if not user or user.status == UserStatus.disabled:
         raise Unauthorized("邮箱或密码错误")
@@ -81,7 +106,19 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/refresh", response_model=TokenResponse)
 def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
-    """刷新令牌"""
+    """
+    刷新 JWT 令牌
+    
+    流程:
+    1. 解码 refresh_token
+    2. 验证用户仍存在且未被禁用
+    3. 签发新的 access_token + refresh_token
+
+    安全策略:
+    - refresh_token 有效期 7 天
+    - 每次刷新同时更新 refresh_token，防止 replay attack
+    - 用户被禁用后无法刷新
+    """
     try:
         payload = jwt.decode(
             req.refresh_token, settings.JWT_REFRESH_SECRET,

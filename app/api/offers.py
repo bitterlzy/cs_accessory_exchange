@@ -20,7 +20,13 @@ def list_offers(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """我收到/发出的提议"""
+    """
+    获取当前用户相关的所有交换提议
+    
+    返回条件: proposer_id == user_id OR receiver_id == user_id
+    包含所有状态（pending/accepted/rejected/completed 等）
+    预加载 listing、双方用户、提议物品及饰品定义。
+    """
     offers = db.query(TradeOffer).options(
         joinedload(TradeOffer.listing),
         joinedload(TradeOffer.proposer),
@@ -39,7 +45,20 @@ def create_offer(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """发起交换提议"""
+    """
+    发起新的交换提议
+    
+    流程:
+    1. 验证 listing 存在且活跃
+    2. 验证不能对自己的 listing 发起交换
+    3. 验证提议方物品存在、属于当前用户、状态可用
+    4. 锁定提议方物品（防止并发）
+    5. 创建 TradeOffer 记录
+    6. 创建 OfferItem 记录（关联物品和提议）
+    7. 写入审计日志
+    8. 创建通知推送给接收方
+    9. 返回完整的提议信息
+    """
     listing = db.query(Listing).options(joinedload(Listing.seller)) \
         .filter(Listing.id == req.listing_id).first()
     if not listing or listing.status != ListingStatus.active:
@@ -98,7 +117,15 @@ def create_offer(
     )
     db.add(notif)
     db.flush()
-    db.refresh(offer, ["listing", "proposer", "receiver", "offer_items"])
+    db.refresh(offer)
+
+    # 重新查询以加载关联关系
+    offer = db.query(TradeOffer).options(
+        joinedload(TradeOffer.listing),
+        joinedload(TradeOffer.proposer),
+        joinedload(TradeOffer.receiver),
+        joinedload(TradeOffer.offer_items).joinedload(OfferItem.inventory_item).joinedload(InventoryItem.definition),
+    ).filter(TradeOffer.id == offer.id).first()
 
     return TradeOfferOut.from_orm(offer)
 
@@ -109,7 +136,17 @@ def accept_offer(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """接受交换提议"""
+    """
+    接收方接受交换提议
+    
+    约束:
+    - 只有 receiver 可以接受
+    - 只有 pending 状态的提议可以接受
+    
+    状态变更: pending -> accepted
+    双方仍可以在 accepted 后取消（需要 counter 操作）。
+    确认交换需双方调用 confirm 接口。
+    """
     offer = db.query(TradeOffer).filter(TradeOffer.id == offer_id).first()
     if not offer:
         raise NotFound("提议不存在")
@@ -135,7 +172,15 @@ def reject_offer(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """拒绝交换提议"""
+    """
+    接收方拒绝交换提议
+    
+    操作:
+    - 提议状态设为 rejected
+    - 解锁提议方物品（状态回到 available）
+    
+    被拒绝后提议方可以重新发起新的提议。
+    """
     offer = db.query(TradeOffer).options(
         joinedload(TradeOffer.offer_items)
     ).filter(TradeOffer.id == offer_id).first()
@@ -168,7 +213,27 @@ def confirm_trade(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """确认交换（物品所有权转移）"""
+    """
+    确认交换，执行物品所有权转移
+    
+    这是整个交换系统的核心事务:
+    
+    所有权转移:
+    - listing 中的物品 -> 提议方 (proposer)
+    - 提议中的物品 -> 接收方 (receiver)
+    所有物品状态重置为 available
+    
+    后续操作:
+    - 提议状态设为 completed
+    - listing 关闭 (status -> closed)
+    - tracking 设为 inactive
+    - 双方 trade_count +1
+    - 写入审计日志
+    
+    数据一致性:
+    - 所有操作在单次 flush 内完成
+    - 如果过程中抛出异常，自动回滚
+    """
     offer = db.query(TradeOffer).options(
         joinedload(TradeOffer.offer_items),
         joinedload(TradeOffer.listing),

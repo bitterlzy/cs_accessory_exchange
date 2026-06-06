@@ -3,7 +3,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import (
     Column, BigInteger, String, Boolean, DateTime, Text,
-    Enum as SAEnum, ForeignKey, JSON, Decimal, UniqueConstraint, Index, Integer
+    Enum as SAEnum, ForeignKey, JSON, Numeric, UniqueConstraint, Index, Integer
 )
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -136,7 +136,7 @@ class InventoryItem(Base):
     owner_id = Column("owner_id", BigInteger, ForeignKey("users.id"), nullable=False)
     definition_id = Column("definition_id", BigInteger, ForeignKey("item_definitions.id"), nullable=False)
     quality = Column(SAEnum(ItemQuality), nullable=False)
-    float_value = Column("float_value", Decimal(10, 8))
+    float_value = Column("float_value", Numeric(10, 8))
     pattern = Column(Integer)
     sticker_details = Column("sticker_details", JSON)
     stat_trak = Column("stat_trak", Boolean, default=False)
@@ -214,9 +214,9 @@ class ItemPrice(Base):
     quality = Column(SAEnum(ItemQuality), nullable=False)
     stat_trak = Column("stat_trak", Boolean, default=False)
     source = Column(SAEnum(PriceSource), nullable=False)
-    price_min = Column("price_min", Decimal(12, 2))
-    price_max = Column("price_max", Decimal(12, 2))
-    price_avg = Column("price_avg", Decimal(12, 2))
+    price_min = Column("price_min", Numeric(12, 2))
+    price_max = Column("price_max", Numeric(12, 2))
+    price_avg = Column("price_avg", Numeric(12, 2))
     volume_24h = Column("volume_24h", Integer)
     currency = Column(String(3), default="CNY")
     fetched_at = Column("fetched_at", DateTime, nullable=False)
@@ -279,7 +279,7 @@ class EventLog(Base):
     trade_offer_id = Column("trade_offer_id", BigInteger, ForeignKey("trade_offers.id"))
     actor_id = Column("actor_id", BigInteger, ForeignKey("users.id"), nullable=False)
     event_type = Column("event_type", String(50), nullable=False)
-    metadata = Column(JSON)
+    event_metadata = Column(JSON)
     ip_address = Column("ip_address", String(45))
     created_at = Column("created_at", DateTime, default=datetime.utcnow)
 
