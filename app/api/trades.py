@@ -1,4 +1,5 @@
 """交换历史路由"""
+from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
@@ -10,7 +11,7 @@ from app.errors import NotFound
 router = APIRouter(prefix="/api/trades", tags=["交换历史"])
 
 
-@router.get("", response_model=list[TradeOfferOut])
+@router.get("", response_model=List[TradeOfferOut])
 def list_trades(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),

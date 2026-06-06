@@ -1,4 +1,5 @@
 """库存路由"""
+from typing import List
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
@@ -10,7 +11,7 @@ from app.errors import NotFound, BadRequest, Forbidden
 router = APIRouter(prefix="/api/inventory", tags=["库存"])
 
 
-@router.get("", response_model=list[InventoryItemOut])
+@router.get("", response_model=List[InventoryItemOut])
 def list_inventory(
     status: str = None,
     category: str = None,

@@ -23,3 +23,8 @@ Thumbs.db
 # Upload scripts
 push_github.py
 upload_github.py
+
+# Node.js
+node_modules/
+.vite/
+dist/

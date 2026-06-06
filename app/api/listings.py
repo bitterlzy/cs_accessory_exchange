@@ -1,4 +1,5 @@
 """交换请求路由 (Listings)"""
+from typing import List
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
@@ -61,7 +62,7 @@ def list_listings(
     )
 
 
-@router.get("/my", response_model=list[ListingOut])
+@router.get("/my", response_model=List[ListingOut])
 def my_listings(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),

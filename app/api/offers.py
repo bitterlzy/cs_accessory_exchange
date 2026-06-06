@@ -1,4 +1,5 @@
 """交换提议路由 (TradeOffers)"""
+from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
@@ -15,7 +16,7 @@ from app.socketio_server import send_offer_update, send_notification
 router = APIRouter(prefix="/api/offers", tags=["交换提议"])
 
 
-@router.get("", response_model=list[TradeOfferOut])
+@router.get("", response_model=List[TradeOfferOut])
 def list_offers(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),

@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional, List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -37,7 +37,7 @@ def link_account(req: LinkSteamRequest, uid: int = Depends(get_current_user_id),
     db.flush()
     return SteamAccountOut.from_orm(acct)
 
-@router.get("/accounts", response_model=list[SteamAccountOut])
+@router.get("/accounts", response_model=List[SteamAccountOut])
 def list_accounts(uid: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     return [SteamAccountOut.from_orm(a) for a in db.query(SteamAccount).filter(SteamAccount.user_id == uid).all()]
 
