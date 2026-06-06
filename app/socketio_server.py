@@ -1,4 +1,4 @@
-﻿"""Socket.IO 实时推送服务"""
+"""Socket.IO 实时推送服务"""
 import socketio
 from app.config import settings
 

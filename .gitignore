@@ -19,3 +19,7 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+
+# Upload scripts
+push_github.py
+upload_github.py

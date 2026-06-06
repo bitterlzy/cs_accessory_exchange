@@ -1,4 +1,4 @@
-﻿"""交换请求路由 (Listings)"""
+"""交换请求路由 (Listings)"""
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db

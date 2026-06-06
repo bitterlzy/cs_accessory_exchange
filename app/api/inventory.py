@@ -1,4 +1,4 @@
-﻿"""库存路由"""
+"""库存路由"""
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db

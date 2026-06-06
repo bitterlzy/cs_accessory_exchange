@@ -1,4 +1,4 @@
-﻿"""Pydantic 请求/响应 Schema"""
+"""Pydantic 请求/响应 Schema"""
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, Field, validator
@@ -9,6 +9,7 @@ class RegisterRequest(BaseModel):
     email: str = Field(..., max_length=255)
     username: str = Field(..., min_length=2, max_length=50)
     password: str = Field(..., min_length=6, max_length=100)
+    phone: str = Field(..., min_length=11, max_length=11, description="phone number")
 
 class LoginRequest(BaseModel):
     email: str
@@ -183,3 +184,88 @@ class ErrorResponse(BaseModel):
     error: str
     code: Optional[str] = None
     details: Optional[list] = None
+
+
+# ===== KYC / 实名认证 =====
+class KYCSubmitRequest(BaseModel):
+    real_name: str = Field(..., min_length=2, max_length=100, description="真实姓名")
+    id_number: str = Field(..., min_length=18, max_length=18, description="身份证号")
+    alipay_account: str = Field(..., max_length=100, description="支付宝账号")
+
+class KYCStatusResponse(BaseModel):
+    user_id: int
+    verification_level: str
+    real_name: Optional[str] = None
+    alipay_account: Optional[str] = None
+    is_verified: bool
+    fail_reason: Optional[str] = None
+    verified_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+# ===== Steam 账号 =====
+class LinkSteamRequest(BaseModel):
+    trade_url: str = Field(..., max_length=500, description="Steam交易链接")
+    steam_name: Optional[str] = None
+
+class SteamAccountOut(BaseModel):
+    id: int
+    user_id: int
+    steam_id: Optional[str] = None
+    steam_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    trade_url: str
+    is_primary: bool
+    is_verified: bool
+    last_sync_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+class SteamInventoryItem(BaseModel):
+    asset_id: str
+    market_hash_name: str
+    quality: Optional[str] = None
+    float_value: Optional[float] = None
+    image_url: Optional[str] = None
+    inspect_link: Optional[str] = None
+
+
+# ===== 存入 / 取回 =====
+class DepositRequest(BaseModel):
+    asset_ids: List[str] = Field(..., min_items=1, max_items=100, description="要存入的Steam资产ID列表")
+
+class WithdrawRequest(BaseModel):
+    inventory_item_ids: List[int] = Field(..., min_items=1, max_items=10, description="要取回的库存ID列表")
+
+class SteamTradeOperationOut(BaseModel):
+    id: int
+    operation_type: str
+    trade_offer_id: Optional[str] = None
+    status: str
+    items: Optional[dict] = None
+    sent_at: Optional[datetime] = None
+    accepted_at: Optional[datetime] = None
+    escrow_days: int = 0
+    error_message: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+
+
+# ===== BUFF 价格同步 =====
+class BUFFPriceSyncRequest(BaseModel):
+    definition_ids: Optional[List[int]] = None
+    category: Optional[str] = None
+
+
+# ===== 风控 =====
+class FreezeUserRequest(BaseModel):
+    user_id: int
+    reason: str = Field(..., min_length=1)
+
+class UnfreezeUserRequest(BaseModel):
+    user_id: int

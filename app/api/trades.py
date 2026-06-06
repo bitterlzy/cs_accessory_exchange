@@ -1,4 +1,4 @@
-﻿"""交换历史路由"""
+"""交换历史路由"""
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db

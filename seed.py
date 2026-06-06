@@ -1,4 +1,4 @@
-﻿"""装备数据字典种子脚本"""
+"""装备数据字典种子脚本"""
 from app.database import SessionLocal, engine, Base
 from app.models import ItemDefinition, ItemCategory, ItemRarity
 

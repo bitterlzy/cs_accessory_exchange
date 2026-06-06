@@ -1,4 +1,4 @@
-﻿"""认证路由 - 注册/登录/JWT 刷新"""
+"""认证路由 - 注册/登录/JWT 刷新"""
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -46,7 +46,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     - 400: 邮箱或用户名已被注册
     """
     existing = db.query(User).filter(
-        (User.email == req.email) | (User.username == req.username)
+        (User.email == req.email) | (User.username == req.username) | (User.phone == req.phone)
     ).first()
     if existing:
         raise BadRequest("邮箱或用户名已被注册")
@@ -54,6 +54,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     user = User(
         email=req.email,
         username=req.username,
+        phone=req.phone,
         password_hash=pwd_ctx.hash(req.password),
     )
     db.add(user)

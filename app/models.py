@@ -1,4 +1,13 @@
-﻿"""SQLAlchemy 数据模型 - 对应 Prisma schema 的 10 张表"""
+"""SQLAlchemy ORM 数据模型 - v2.0 扩展版
+
+包含 15 张表:
+- User, UserVerification, SteamAccount: 用户与认证
+- ItemDefinition, InventoryItem, ItemPrice: 饰品与库存
+- Listing, ListingTracking: 交换请求
+- TradeOffer, OfferItem: 交换提议
+- PlatformBot, SteamTradeOperation: Steam机器人交易
+- EventLog, Notification: 审计与通知
+"""
 import enum
 from datetime import datetime
 from sqlalchemy import (
@@ -14,6 +23,12 @@ from app.database import Base
 class UserStatus(str, enum.Enum):
     active = "active"
     disabled = "disabled"
+
+class VerificationLevel(str, enum.Enum):
+    none = "none"
+    pending = "pending"
+    verified = "verified"
+    failed = "failed"
 
 class ItemCategory(str, enum.Enum):
     weapon = "weapon"
@@ -47,6 +62,12 @@ class InventoryStatus(str, enum.Enum):
     locked = "locked"
     traded = "traded"
     removed = "removed"
+    depositing = "depositing"     # 正在存入
+    withdrawing = "withdrawing"   # 正在取回
+
+class StorageType(str, enum.Enum):
+    user = "user"         # 物品在用户Steam库存中
+    platform = "platform"  # 物品在平台机器人库存中
 
 class ListingStatus(str, enum.Enum):
     active = "active"
@@ -78,8 +99,28 @@ class OfferSide(str, enum.Enum):
     proposer = "proposer"
     receiver = "receiver"
 
+class BotStatus(str, enum.Enum):
+    online = "online"
+    offline = "offline"
+    busy = "busy"
+    error = "error"
 
-# ==================== 数据库模型 ====================
+class SteamOperationType(str, enum.Enum):
+    deposit = "deposit"
+    withdraw = "withdraw"
+    trade = "trade"
+
+class SteamOpStatus(str, enum.Enum):
+    pending = "pending"
+    sent = "sent"
+    accepted = "accepted"
+    cancelled = "cancelled"
+    expired = "expired"
+    declined = "declined"
+    failed = "failed"
+
+
+# ==================== 用户与认证 ====================
 
 class User(Base):
     __tablename__ = "users"
@@ -88,22 +129,67 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     username = Column(String(50), unique=True, nullable=False)
     password_hash = Column("password_hash", String(255), nullable=False)
+    phone = Column(String(20), unique=True)
+    phone_verified = Column("phone_verified", Boolean, default=False)
     avatar_url = Column("avatar_url", String(500))
     steam_id = Column("steam_id", String(64), unique=True)
     reputation_score = Column("reputation_score", Integer, default=0)
     trade_count = Column("trade_count", Integer, default=0)
+    verification_level = Column("verification_level", SAEnum(VerificationLevel), default=VerificationLevel.none)
+    is_frozen = Column("is_frozen", Boolean, default=False)
+    freeze_reason = Column("freeze_reason", Text)
     status = Column(SAEnum(UserStatus), default=UserStatus.active)
     last_login = Column("last_login", DateTime)
     created_at = Column("created_at", DateTime, default=datetime.utcnow)
     updated_at = Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # 关系
     inventory_items = relationship("InventoryItem", back_populates="owner")
     listings = relationship("Listing", back_populates="seller")
     listing_tracking = relationship("ListingTracking", back_populates="user")
     proposed_offers = relationship("TradeOffer", back_populates="proposer", foreign_keys="TradeOffer.proposer_id")
     received_offers = relationship("TradeOffer", back_populates="receiver", foreign_keys="TradeOffer.receiver_id")
+    verification = relationship("UserVerification", back_populates="user", uselist=False)
+    steam_accounts = relationship("SteamAccount", back_populates="user")
 
+
+class UserVerification(Base):
+    __tablename__ = "user_verifications"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column("user_id", BigInteger, ForeignKey("users.id"), nullable=False, unique=True)
+    real_name = Column("real_name", String(100), nullable=False, comment="真实姓名")
+    id_number_hash = Column("id_number_hash", String(64), nullable=False, unique=True, comment="身份证号SHA256")
+    id_number_encrypted = Column("id_number_encrypted", String(255), comment="加密存储的身份证号")
+    alipay_account = Column("alipay_account", String(100), unique=True, comment="支付宝账号")
+    alipay_real_name = Column("alipay_real_name", String(100), comment="支付宝实名")
+    verification_level = Column("verification_level", SAEnum(VerificationLevel), default=VerificationLevel.pending)
+    fail_reason = Column("fail_reason", String(500))
+    verified_at = Column("verified_at", DateTime)
+    created_at = Column("created_at", DateTime, default=datetime.utcnow)
+    updated_at = Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="verification")
+
+
+class SteamAccount(Base):
+    __tablename__ = "steam_accounts"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column("user_id", BigInteger, ForeignKey("users.id"), nullable=False)
+    steam_id = Column("steam_id", String(64), nullable=False, unique=True, comment="Steam64 ID")
+    steam_name = Column("steam_name", String(255))
+    avatar_url = Column("avatar_url", String(500))
+    trade_url = Column("trade_url", String(500), nullable=False, comment="Steam交易链接")
+    is_primary = Column("is_primary", Boolean, default=True)
+    is_verified = Column("is_verified", Boolean, default=False, comment="所有权已验证")
+    last_sync_at = Column("last_sync_at", DateTime)
+    created_at = Column("created_at", DateTime, default=datetime.utcnow)
+    updated_at = Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="steam_accounts")
+
+
+# ==================== 饰品与库存 ====================
 
 class ItemDefinition(Base):
     __tablename__ = "item_definitions"
@@ -119,11 +205,14 @@ class ItemDefinition(Base):
     market_hash_name = Column("market_hash_name", String(255), unique=True, nullable=False, index=True)
     inspect_url_template = Column("inspect_url_template", Text)
     image_url = Column("image_url", String(500))
+    buff_id = Column("buff_id", Integer, comment="BUFF平台物品ID")
+    buff_goods_id = Column("buff_goods_id", Integer, comment="BUFF商品ID")
+    min_float = Column("min_float", Numeric(10, 8), comment="最低磨损值")
+    max_float = Column("max_float", Numeric(10, 8), comment="最高磨损值")
     is_tradable = Column("is_tradable", Boolean, default=True)
     created_at = Column("created_at", DateTime, default=datetime.utcnow)
     updated_at = Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # 关系
     inventory_items = relationship("InventoryItem", back_populates="definition")
     listing_tracking = relationship("ListingTracking", back_populates="definition")
     item_prices = relationship("ItemPrice", back_populates="definition")
@@ -144,6 +233,10 @@ class InventoryItem(Base):
     description = Column(Text)
     image_url = Column("image_url", String(500))
     status = Column(SAEnum(InventoryStatus), default=InventoryStatus.available)
+    storage_type = Column("storage_type", SAEnum(StorageType), default=StorageType.user)
+    bot_id = Column("bot_id", BigInteger, ForeignKey("platform_bots.id"))
+    asset_id = Column("asset_id", String(64), comment="Steam资产ID")
+    inspect_link = Column("inspect_link", Text, comment="CS2检视链接")
     created_at = Column("created_at", DateTime, default=datetime.utcnow)
     updated_at = Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -152,12 +245,41 @@ class InventoryItem(Base):
     listing = relationship("Listing", back_populates="offered_item", uselist=False)
     offer_items = relationship("OfferItem", back_populates="inventory_item")
 
+
     __table_args__ = (
         Index("idx_owner_id", "owner_id"),
         Index("idx_definition_id", "definition_id"),
         Index("idx_owner_status", "owner_id", "status"),
+        Index("idx_storage_type", "storage_type"),
     )
 
+
+class ItemPrice(Base):
+    __tablename__ = "item_prices"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    definition_id = Column("definition_id", BigInteger, ForeignKey("item_definitions.id"), nullable=False)
+    quality = Column(SAEnum(ItemQuality), nullable=False)
+    stat_trak = Column("stat_trak", Boolean, default=False)
+    source = Column(SAEnum(PriceSource), nullable=False)
+    price_min = Column("price_min", Numeric(12, 2))
+    price_max = Column("price_max", Numeric(12, 2))
+    price_avg = Column("price_avg", Numeric(12, 2))
+    volume_24h = Column("volume_24h", Integer)
+    currency = Column(String(3), default="CNY")
+    fetched_at = Column("fetched_at", DateTime, nullable=False)
+    created_at = Column("created_at", DateTime, default=datetime.utcnow)
+
+    definition = relationship("ItemDefinition", back_populates="item_prices")
+
+    __table_args__ = (
+        Index("idx_price_definition", "definition_id"),
+        Index("idx_price_source", "source"),
+        Index("idx_price_fetched", "fetched_at"),
+    )
+
+
+# ==================== 交换请求 ====================
 
 class Listing(Base):
     __tablename__ = "listings"
@@ -206,30 +328,7 @@ class ListingTracking(Base):
     )
 
 
-class ItemPrice(Base):
-    __tablename__ = "item_prices"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    definition_id = Column("definition_id", BigInteger, ForeignKey("item_definitions.id"), nullable=False)
-    quality = Column(SAEnum(ItemQuality), nullable=False)
-    stat_trak = Column("stat_trak", Boolean, default=False)
-    source = Column(SAEnum(PriceSource), nullable=False)
-    price_min = Column("price_min", Numeric(12, 2))
-    price_max = Column("price_max", Numeric(12, 2))
-    price_avg = Column("price_avg", Numeric(12, 2))
-    volume_24h = Column("volume_24h", Integer)
-    currency = Column(String(3), default="CNY")
-    fetched_at = Column("fetched_at", DateTime, nullable=False)
-    created_at = Column("created_at", DateTime, default=datetime.utcnow)
-
-    definition = relationship("ItemDefinition", back_populates="item_prices")
-
-    __table_args__ = (
-        Index("idx_price_definition", "definition_id"),
-        Index("idx_price_source", "source"),
-        Index("idx_price_fetched", "fetched_at"),
-    )
-
+# ==================== 交换提议 ====================
 
 class TradeOffer(Base):
     __tablename__ = "trade_offers"
@@ -239,6 +338,8 @@ class TradeOffer(Base):
     proposer_id = Column("proposer_id", BigInteger, ForeignKey("users.id"), nullable=False)
     receiver_id = Column("receiver_id", BigInteger, ForeignKey("users.id"), nullable=False)
     status = Column(SAEnum(OfferStatus), default=OfferStatus.pending)
+    steam_trade_offer_id = Column("steam_trade_offer_id", String(64), comment="Steam交易报价ID")
+    escrow_end_date = Column("escrow_end_date", DateTime, comment="Steam托管到期")
     proposer_note = Column("proposer_note", Text)
     receiver_note = Column("receiver_note", Text)
     expires_at = Column("expires_at", DateTime)
@@ -250,6 +351,7 @@ class TradeOffer(Base):
     receiver = relationship("User", back_populates="received_offers", foreign_keys=[receiver_id])
     offer_items = relationship("OfferItem", back_populates="trade_offer")
     event_logs = relationship("EventLog", back_populates="trade_offer")
+    steam_operations = relationship("SteamTradeOperation", back_populates="trade_offer")
 
     __table_args__ = (
         Index("idx_offer_listing", "listing_id"),
@@ -271,6 +373,64 @@ class OfferItem(Base):
     trade_offer = relationship("TradeOffer", back_populates="offer_items")
     inventory_item = relationship("InventoryItem", back_populates="offer_items")
 
+
+# ==================== Steam机器人交易 ====================
+
+class PlatformBot(Base):
+    __tablename__ = "platform_bots"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    steam_id = Column("steam_id", String(64), nullable=False, unique=True)
+    bot_name = Column("bot_name", String(100))
+    steam_username = Column("steam_username", String(255))
+    shared_secret = Column("shared_secret", String(255), comment="Steam 2FA共享密钥")
+    identity_secret = Column("identity_secret", String(255), comment="交易确认密钥")
+    api_key = Column("api_key", String(255))
+    inventory_url = Column("inventory_url", String(500))
+    status = Column(SAEnum(BotStatus), default=BotStatus.offline)
+    max_concurrent = Column("max_concurrent", Integer, default=5)
+    current_load = Column("current_load", Integer, default=0)
+    trade_count = Column("trade_count", Integer, default=0)
+    is_active = Column("is_active", Boolean, default=True)
+    created_at = Column("created_at", DateTime, default=datetime.utcnow)
+    updated_at = Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # inventory_items = relationship("InventoryItem", back_populates="bot")  # unused in P2P mode
+    steam_operations = relationship("SteamTradeOperation", back_populates="bot")
+
+
+class SteamTradeOperation(Base):
+    __tablename__ = "steam_trade_operations"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    operation_type = Column("operation_type", SAEnum(SteamOperationType), nullable=False)
+    trade_offer_id = Column("trade_offer_id", String(64), comment="Steam交易报价ID")
+    bot_id = Column("bot_id", BigInteger, ForeignKey("platform_bots.id"))
+    from_user_id = Column("from_user_id", BigInteger, ForeignKey("users.id"))
+    to_user_id = Column("to_user_id", BigInteger, ForeignKey("users.id"))
+    related_offer_id = Column("related_offer_id", BigInteger, ForeignKey("trade_offers.id"), comment="关联平台Offer")
+    status = Column(SAEnum(SteamOpStatus), default=SteamOpStatus.pending)
+    items = Column(JSON, comment="交易物品快照")
+    sent_at = Column("sent_at", DateTime)
+    accepted_at = Column("accepted_at", DateTime)
+    cancelled_at = Column("cancelled_at", DateTime)
+    escrow_days = Column("escrow_days", Integer, default=0)
+    retry_count = Column("retry_count", Integer, default=0)
+    error_message = Column("error_message", Text)
+    created_at = Column("created_at", DateTime, default=datetime.utcnow)
+    updated_at = Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    bot = relationship("PlatformBot", back_populates="steam_operations")
+    trade_offer = relationship("TradeOffer", back_populates="steam_operations")
+
+    __table_args__ = (
+        Index("idx_steam_offer", "trade_offer_id"),
+        Index("idx_steam_status", "status"),
+        Index("idx_steam_related", "related_offer_id"),
+    )
+
+
+# ==================== 审计与通知 ====================
 
 class EventLog(Base):
     __tablename__ = "event_logs"

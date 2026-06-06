@@ -1,4 +1,4 @@
-﻿"""FastAPI 应用入口"""
+"""FastAPI 应用入口"""
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -7,8 +7,8 @@ from app.config import settings
 from app.database import engine, Base
 from app.models import *  # noqa: 确保模型注册
 from app.api import (
-    auth, users, inventory,
-    listings, offers, trades, notifications,
+    auth, users, kyc, inventory,
+    listings, offers, trades, notifications, steam,
 )
 from app.socketio_server import socket_app
 from app.errors import AppError
@@ -38,6 +38,8 @@ app.include_router(listings.router)
 app.include_router(offers.router)
 app.include_router(trades.router)
 app.include_router(notifications.router)
+app.include_router(kyc.router)
+app.include_router(steam.router)
 
 
 @app.on_event("startup")
